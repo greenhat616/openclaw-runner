@@ -71,7 +71,10 @@ ENV PATH="/usr/local/go/bin:${PATH}"
 # ── 6. Rust toolchain → /opt/rust (shared, read-only at runtime) ───────────
 ENV RUSTUP_HOME="/opt/rust/rustup"
 ENV CARGO_HOME="/opt/rust/cargo"
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+RUN for i in 1 2 3; do \
+      curl --proto '=https' --tlsv1.2 -sSf --retry 3 --retry-delay 5 https://sh.rustup.rs \
+        | sh -s -- -y && break || sleep 10; \
+    done \
     && chmod -R a+rx /opt/rust
 ENV PATH="${CARGO_HOME}/bin:${PATH}"
 
@@ -87,19 +90,30 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env CARGO_HOME=/tmp/uv-install UV_INSTALL_DIR=/usr/local/bin sh \
     && rm -rf /tmp/uv-install
 
-# ── 9. pnpm (global, system-level binary) ──────────────────────────────────
-RUN npm install -g pnpm
+# ── 9. pnpm (via corepack, avoids conflict with corepack shims) ────────────
+RUN corepack install -g pnpm@latest
 
 # ── 10. q (modern DNS client) + tcping → /usr/local/bin ────────────────────
-RUN GOPATH=/tmp/go-build \
-    && go install github.com/natesales/q@latest \
-    && go install github.com/cloverstd/tcping@latest \
-    && cp /tmp/go-build/bin/q /usr/local/bin/q \
-    && cp /tmp/go-build/bin/tcping /usr/local/bin/tcping \
-    && rm -rf /tmp/go-build
+# Asset naming: q_<ver>_linux_amd64.tar.gz, tcping-linux-amd64-<ver>.tar.gz
+RUN Q_TAG=$(curl -fsSL "https://api.github.com/repos/natesales/q/releases/latest" | jq -r .tag_name) \
+    && Q_VER="${Q_TAG#v}" \
+    && curl -fsSL "https://github.com/natesales/q/releases/download/${Q_TAG}/q_${Q_VER}_linux_amd64.tar.gz" \
+       -o /tmp/q.tar.gz \
+    && tar -xzf /tmp/q.tar.gz -C /usr/local/bin/ q \
+    && chmod +x /usr/local/bin/q \
+    && rm -f /tmp/q.tar.gz
+
+RUN TCPING_TAG=$(curl -fsSL "https://api.github.com/repos/cloverstd/tcping/releases/latest" | jq -r .tag_name) \
+    && curl -fsSL "https://github.com/cloverstd/tcping/releases/download/${TCPING_TAG}/tcping-linux-amd64-${TCPING_TAG}.tar.gz" \
+       -o /tmp/tcping.tar.gz \
+    && tar -xzf /tmp/tcping.tar.gz -C /usr/local/bin/ tcping \
+    && chmod +x /usr/local/bin/tcping \
+    && rm -f /tmp/tcping.tar.gz
 
 # ── 11. Create openclaw user ──────────────────────────────────────────────
-RUN groupadd -g ${OPENCLAW_GID} openclaw \
+# Remove default ubuntu user (occupies UID/GID 1000), then create openclaw
+RUN userdel -r ubuntu 2>/dev/null || true \
+    && groupadd -g ${OPENCLAW_GID} openclaw \
     && useradd -m -u ${OPENCLAW_UID} -g ${OPENCLAW_GID} -s /usr/bin/zsh openclaw \
     && echo "openclaw ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/openclaw
 
@@ -119,4 +133,4 @@ WORKDIR /home/openclaw
 EXPOSE 18789
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["openclaw", "gateway", "run", "--port", "18789", "--bind", "lan", "--verbose"]
+CMD ["openclaw", "gateway", "run", "--port", "18789", "--bind", "lan", "--allow-unconfigured", "--verbose"]

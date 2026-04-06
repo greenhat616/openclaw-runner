@@ -10,6 +10,25 @@ set -euo pipefail
 
 HOME_DIR="${HOME:-/home/openclaw}"
 
+# ── Fix volume ownership (named volumes mount as root) ─────────────────────
+sudo chown -R openclaw:openclaw "${HOME_DIR}" 2>/dev/null || true
+
+# ── Bootstrap minimal gateway config if missing ───────────────────────────
+OPENCLAW_CONF="${HOME_DIR}/.openclaw/openclaw.json"
+if [[ ! -f "$OPENCLAW_CONF" ]]; then
+    cat > "$OPENCLAW_CONF" <<'CONF'
+{
+  // Minimal gateway config — edit as needed
+  "gateway": {
+    "mode": "local",
+    "controlUi": {
+      "dangerouslyAllowHostHeaderOriginFallback": true
+    }
+  }
+}
+CONF
+fi
+
 # ── Initialize home volume on first run ─────────────────────────────────────
 INIT_MARKER="${HOME_DIR}/.openclaw-init-done"
 if [[ ! -f "$INIT_MARKER" ]]; then
