@@ -90,6 +90,88 @@ docker run -d \
 4. 加载 `~/.openclaw/.env` 环境变量
 5. 启动 OpenClaw Gateway（带自动重启保护）
 
+## 模型配置
+
+OpenClaw 内置支持多种 LLM Provider，同时支持自定义 OpenAI 兼容端点。
+
+### 内置 Provider
+
+设置对应的 API Key 环境变量即可使用：
+
+| Provider | 环境变量 | 模型引用格式 |
+|----------|---------|-------------|
+| OpenAI | `OPENAI_API_KEY` | `openai/gpt-5.4` |
+| Anthropic | `ANTHROPIC_API_KEY` | `anthropic/claude-opus-4-6` |
+| Google Gemini | `GEMINI_API_KEY` | `google/gemini-3.1-pro-preview` |
+| OpenRouter | `OPENROUTER_API_KEY` | `openrouter/auto` |
+| Groq | `GROQ_API_KEY` | `groq/...` |
+| Mistral | `MISTRAL_API_KEY` | `mistral/...` |
+
+支持 Key 轮换：`OPENAI_API_KEYS`（逗号分隔）或 `OPENAI_API_KEY_1`、`OPENAI_API_KEY_2` 等。Anthropic / Gemini 同理。
+
+### 自定义 OpenAI 兼容端点
+
+编辑 `~/.openclaw/openclaw.json`（容器内路径 `/home/openclaw/.openclaw/openclaw.json`，已通过 volume 持久化）：
+
+```json5
+{
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "my-proxy": {
+        "baseUrl": "http://localhost:4000/v1",
+        "apiKey": "${MY_CUSTOM_API_KEY}",
+        "api": "openai-completions",
+        "models": [
+          { "id": "my-model", "name": "My Model", "contextWindow": 128000, "maxTokens": 8192 }
+        ]
+      }
+    }
+  }
+}
+```
+
+`api` 适配器类型：
+
+| 值 | 适用场景 |
+|----|---------|
+| `openai-completions` | OpenAI 兼容 API（vLLM、LM Studio、LiteLLM、Ollama 等） |
+| `anthropic-messages` | Anthropic Messages API 兼容端点 |
+| `openai-responses` | OpenAI Responses API |
+| `google-generative-ai` | Google Generative AI |
+
+> **注意**：OpenClaw 不读取 `OPENAI_BASE_URL` / `OPENAI_API_BASE` 环境变量，自定义端点必须通过配置文件设置。
+
+### 切换模型
+
+```bash
+# CLI
+openclaw models set anthropic/claude-opus-4-6
+openclaw models set openai/gpt-5.4
+openclaw models list
+
+# 会话内
+/model anthropic/claude-opus-4-6
+/model list
+```
+
+配置文件方式（支持自动 fallback）：
+
+```json5
+{
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-6",
+        "fallbacks": ["openai/gpt-5.4"]
+      }
+    }
+  }
+}
+```
+
+更多详情参见 [OpenClaw 模型文档](https://docs.openclaw.ai/concepts/models) 和 [Provider 配置文档](https://docs.openclaw.ai/concepts/model-providers)。
+
 ## 构建镜像
 
 ```bash
